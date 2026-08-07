@@ -9,14 +9,15 @@
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html {
+    height: 100%;
     overscroll-behavior: none;
     -webkit-user-select: none;
     user-select: none;
   }
   body {
+    height: 100%;
+    min-height: 100dvh;
     background: linear-gradient(#1a1a2e, #16213e);
-    min-height: 100vh;
-    width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -26,26 +27,36 @@
     overscroll-behavior: none;
     -webkit-user-select: none;
     user-select: none;
-    padding: 16px;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    gap: 10px;
   }
   #game-container {
     position: relative;
-    width: 480px;
-    max-width: 95vw;
+    width: min(480px, 96vw);
+    aspect-ratio: 480 / 270;
     touch-action: none;
     flex-shrink: 0;
   }
   canvas {
     display: block;
     width: 100%;
+    height: 100%;
     background: #6ec6ff;
     border: 4px solid #2c2c54;
     border-radius: 4px;
     image-rendering: pixelated;
     touch-action: none;
   }
+  /* Op iPhone in liggende stand vult het spel het scherm veel beter dan een klein vast blokje */
+  @media (orientation: landscape) {
+    body { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); gap: 6px; }
+    #game-container { width: min(96vw, calc(92dvh * 480 / 270)); }
+    #hint { font-size: 10px; }
+  }
+  /* Vol scherm i.p.v. vastgeplakt aan het kleine 16:9 canvasje -- zo is er altijd
+     genoeg ruimte voor het personage en de tekst, ook op een smalle iPhone. */
   #overlay {
-    position: absolute;
+    position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(10,10,30,0.92);
     color: #fff;
@@ -55,20 +66,46 @@
     justify-content: center;
     text-align: center;
     padding: 20px;
-    border-radius: 4px;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    z-index: 20;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
+  /* Dialoogscherm: Amina/Kikker staan er levensecht bij, alsof ze zelf tegen je praten */
+  #overlay.dialogue-mode {
+    background:
+      linear-gradient(rgba(8,10,25,0.55), rgba(8,10,25,0.72)),
+      linear-gradient(180deg, #ffd89b 0%, #87ceeb 55%, #3a7bd5 100%);
+    padding: 6% 4% 6% 40%;
+  }
+  .dialogue-char {
+    position: absolute;
+    left: 1%;
+    bottom: 0;
+    width: 38%;
+    height: auto;
+    max-height: 70%;
+    z-index: 5;
+    filter: drop-shadow(3px 4px 3px rgba(0,0,0,0.35));
+    pointer-events: none;
+  }
+  .dialogue-char.amina { width: 17%; }
   .speaker {
     color: #7fffd4;
     font-weight: bold;
     font-size: 14px;
     margin-bottom: 4px;
     letter-spacing: 1px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.6);
   }
   .line {
-    font-size: 15px;
-    line-height: 1.5;
-    margin-bottom: 18px;
-    max-width: 380px;
+    font-size: 14px;
+    line-height: 1.45;
+    margin-bottom: 14px;
+    max-width: 255px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.6);
   }
   button {
     background: #ff6b6b;
@@ -82,6 +119,8 @@
     border-radius: 4px;
     letter-spacing: 1px;
     touch-action: manipulation;
+    position: relative;
+    z-index: 6;
   }
   button:hover, button:active { background: #ff8787; }
   #hud {
@@ -97,17 +136,64 @@
     text-align: center;
     color: #aaa;
     font-size: 12px;
-    margin-top: 10px;
+    margin-top: 2px;
     letter-spacing: 0.5px;
+  }
+  .celebrate-avatar {
+    width: 76px;
+    height: 122px;
+    image-rendering: pixelated;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+  }
+  /* Zachte suggestie om het toestel te draaien -- alleen op telefoons in staande stand, wegklikbaar */
+  #rotate-hint {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: #0a0a1e;
+    color: #fff;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 24px;
+    gap: 14px;
+    font-family: 'Courier New', monospace;
+  }
+  #rotate-hint .icon { font-size: 46px; display: inline-block; animation: rotateHintSpin 1.8s ease-in-out infinite; }
+  @keyframes rotateHintSpin {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(90deg); }
+  }
+  #rotate-hint p { max-width: 280px; font-size: 14px; line-height: 1.5; }
+  #rotate-hint button {
+    background: transparent;
+    border: 2px solid #7fffd4;
+    color: #7fffd4;
+    font-size: 13px;
+    padding: 10px 18px;
+  }
+  #rotate-hint button:hover, #rotate-hint button:active { background: rgba(127,255,212,0.15); }
+  @media (orientation: portrait) and (pointer: coarse) {
+    body:not(.hide-rotate-hint) #rotate-hint { display: flex; }
   }
 </style>
 </head>
 <body>
 
+<div id="rotate-hint">
+  <div class="icon">📱</div>
+  <p>Draai je toestel liggend voor de beste speelervaring!</p>
+  <button id="rotate-dismiss">Toch verder spelen</button>
+</div>
+
 <div id="game-container">
   <canvas id="game" width="480" height="270"></canvas>
   <div id="hud"></div>
-  <div id="overlay">
+  <div id="overlay" class="dialogue-mode">
+    <img class="dialogue-char" src="PIXELART/kikker.png" alt="KIKKER">
     <div class="speaker">KIKKER</div>
     <div class="line">"HELP!! Sinds jou laatste vertrek is er chaos op Sao Miguel. De heilige dam is gebroken en het eiland dreigt elk moment onder te lopen. Kun jij ons redden?"</div>
     <button id="next-btn">Verder ▶</button>
@@ -123,6 +209,58 @@ const hud = document.getElementById('hud');
 const gameContainer = document.getElementById('game-container');
 ctx.imageSmoothingEnabled = false;
 
+// ---- Wegklikbare "draai je toestel"-hint (onthouden voor deze sessie) ----
+const rotateHint = document.getElementById('rotate-hint');
+if (sessionStorage.getItem('aminaSkipRotateHint') === '1') {
+  document.body.classList.add('hide-rotate-hint');
+}
+document.getElementById('rotate-dismiss').addEventListener('click', () => {
+  document.body.classList.add('hide-rotate-hint');
+  sessionStorage.setItem('aminaSkipRotateHint', '1');
+});
+
+// ---- Geluidseffecten ----
+function makeAudio(src) {
+  const a = new Audio(src);
+  a.preload = 'auto';
+  return a;
+}
+const SND = {
+  buttonClick: makeAudio('SFX/Button%20Click.wav'),
+  aminaTalking: makeAudio('SFX/Amina%20talking.wav'),
+  frogTalking: makeAudio('SFX/Frog%20talking.wav'),
+  gameOver: makeAudio('SFX/Game%20over.wav'),
+  jumpSfx: makeAudio('SFX/Jump.wav'),
+  messagePopup: makeAudio('SFX/Message%20PopUp.wav')
+};
+function playSound(a) {
+  try {
+    a.currentTime = 0;
+    a.play().catch(() => {});
+  } catch (e) {}
+}
+
+// iOS/Safari houdt elk <audio>-element apart op slot totdat het minstens
+// één keer is afgespeeld tijdens een echte tik van de gebruiker. Alles wordt
+// bij de allereerste tik op de pagina ontgrendeld, zodat geluiden die later
+// vanuit de spellogica komen (bv. game-over) ook gegarandeerd werken.
+let audioUnlocked = false;
+function unlockAllAudio() {
+  if (audioUnlocked) return;
+  audioUnlocked = true;
+  Object.values(SND).forEach((a) => {
+    a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+  });
+}
+document.addEventListener('touchstart', unlockAllAudio, { once: true, passive: true });
+document.addEventListener('click', unlockAllAudio, { once: true });
+
+// ---- Personage-sprites ----
+const aminaRightImg = new Image();
+let aminaRightLoaded = false;
+aminaRightImg.onload = () => { aminaRightLoaded = true; if (!running) draw(); };
+aminaRightImg.src = 'PIXELART/amina-right.png';
+
 // Prevent iOS rubber-band scroll / pinch while playing (scoped to the game area)
 gameContainer.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 document.addEventListener('gesturestart', (e) => e.preventDefault());
@@ -137,8 +275,15 @@ const dialogue = [
 let dIndex = 0;
 
 function renderDialogue() {
+  overlay.classList.add('dialogue-mode');
   const d = dialogue[dIndex];
+  const isAmina = d.speaker === 'AMINA';
+  playSound(SND.messagePopup);
+  playSound(isAmina ? SND.aminaTalking : SND.frogTalking);
+  const charSrc = isAmina ? 'PIXELART/amina-front.png' : 'PIXELART/kikker.png';
+  const charClass = isAmina ? 'dialogue-char amina' : 'dialogue-char';
   overlay.innerHTML = `
+    <img class="${charClass}" src="${charSrc}" alt="${d.speaker}">
     <div class="speaker">${d.speaker}</div>
     <div class="line">${d.text}</div>
     <button id="next-btn">${dIndex < dialogue.length - 1 ? 'Verder ▶' : 'Start de reddingsactie! ⛵'}</button>
@@ -151,6 +296,7 @@ function renderDialogue() {
 }
 
 function advanceDialogue() {
+  playSound(SND.buttonClick);
   dIndex++;
   if (dIndex < dialogue.length) {
     renderDialogue();
@@ -175,16 +321,20 @@ const boat = {
 const waterLevel = 216;
 
 let obstacles = [];
-let spawnTimer = 0;
 let waveOffset = 0;
 
+// Max 3 flessen, op verschillende afstanden van elkaar (score-afstand tot volgende spawn)
+const bottleSpawnScores = [70, 170, 330];
+let nextBottleIndex = 0;
+
 function resetGame() {
-  score = 0; speed = 3.2; obstacles = []; spawnTimer = 0;
+  score = 0; speed = 2.6; obstacles = []; nextBottleIndex = 0;
   boat.y = 190; boat.vy = 0; boat.grounded = true;
   gameOver = false; won = false;
 }
 
 function startGame() {
+  overlay.classList.remove('dialogue-mode');
   overlay.style.display = 'none';
   resetGame();
   running = true;
@@ -197,6 +347,7 @@ function jump() {
   if (boat.grounded) {
     boat.vy = boat.jumpPower;
     boat.grounded = false;
+    playSound(SND.jumpSfx);
   }
 }
 
@@ -228,9 +379,16 @@ function drawBoat(x, y) {
   ctx.lineTo(x+32, y+10);
   ctx.closePath();
   ctx.fill();
-  pixelRect(x+6, y+2, 8, 10, '#e0a877');
-  pixelRect(x+6, y-4, 8, 8, '#3a2a1a');
-  pixelRect(x+7, y+12, 6, 4, '#d9534f');
+  // Amina, aan het roer
+  if (aminaRightLoaded) {
+    const charH = 34;
+    const charW = charH * (aminaRightImg.naturalWidth / aminaRightImg.naturalHeight);
+    ctx.drawImage(aminaRightImg, x + 2, y - 22, charW, charH);
+  } else {
+    pixelRect(x+6, y+2, 8, 10, '#e0a877');
+    pixelRect(x+6, y-4, 8, 8, '#3a2a1a');
+    pixelRect(x+7, y+12, 6, 4, '#d9534f');
+  }
 }
 
 function drawBottle(x, y) {
@@ -288,20 +446,18 @@ function loop() {
 function update() {
   waveOffset += speed;
   score += speed * 0.5;
-  speed += 0.0025;
+  speed += 0.0015;
 
   boat.vy += boat.gravity;
   boat.y += boat.vy;
   if (boat.y >= 190) { boat.y = 190; boat.vy = 0; boat.grounded = true; }
 
-  spawnTimer -= speed;
-  if (spawnTimer <= 0) {
+  if (nextBottleIndex < bottleSpawnScores.length && score >= bottleSpawnScores[nextBottleIndex]) {
     spawnObstacle();
-    spawnTimer = 90 + Math.random() * 60 - speed*4;
-    if (spawnTimer < 45) spawnTimer = 45;
+    nextBottleIndex++;
   }
 
-  const boatBox = { x: boat.x+4, y: boat.y+2, w: 26, h: 24 };
+  const boatBox = { x: boat.x+6, y: boat.y+4, w: 22, h: 20 };
   for (let ob of obstacles) {
     ob.x -= speed;
     const obBox = { x: ob.x, y: ob.y, w: ob.w, h: ob.h };
@@ -334,14 +490,20 @@ function draw() {
 
 function showEnd(success) {
   running = false;
+  overlay.classList.remove('dialogue-mode');
   overlay.style.display = 'flex';
   if (success) {
+    playSound(SND.messagePopup);
+    playSound(SND.frogTalking);
     overlay.innerHTML = `
+      <img class="celebrate-avatar" src="PIXELART/amina-celebrate.png" alt="Amina viert feest">
       <div class="speaker">KIKKER</div>
-      <div class="line">"Kwak! Kwak! Je hebt het gehaald! Sao Miguel is gered — de dam houdt weer stand dankzij jou. Welkom terug, Amina!" 🎉</div>
+      <div class="line">Bedankt, je bent er geraakt. Dankzij jou konden we ontsnappen.</div>
+      <div class="line" style="font-style: italic; font-size: 12px;">"Je kunt de wind niet kiezen, maar wel hoe je je zeilen zet. Zo vaar je langs de obstakels van het leven, op weg naar de bestemming die voor je ligt."</div>
       <button id="retry-btn">Nog een keer spelen 🔁</button>
     `;
   } else {
+    playSound(SND.gameOver);
     overlay.innerHTML = `
       <div class="speaker">KIKKER</div>
       <div class="line">"Kwaak! Je bent gestruikeld over een Hennessy fles... Sao Miguel kan nog niet gered worden. Probeer opnieuw!" 🍾</div>
@@ -350,9 +512,13 @@ function showEnd(success) {
   }
   document.getElementById('retry-btn').addEventListener('touchend', (e) => {
     e.preventDefault(); e.stopPropagation();
+    playSound(SND.buttonClick);
     startGame();
   });
-  document.getElementById('retry-btn').addEventListener('click', startGame);
+  document.getElementById('retry-btn').addEventListener('click', () => {
+    playSound(SND.buttonClick);
+    startGame();
+  });
 }
 
 drawSky();
