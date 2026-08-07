@@ -194,7 +194,7 @@
 <div id="rotate-hint">
   <div class="icon">📱</div>
   <p>Draai je toestel liggend voor de beste speelervaring!</p>
-  <button id="rotate-dismiss">Toch verder spelen</button>
+  <button id="rotate-dismiss">Start</button>
 </div>
 
 <div id="game-container">
@@ -225,6 +225,7 @@ if (sessionStorage.getItem('aminaSkipRotateHint') === '1') {
 document.getElementById('rotate-dismiss').addEventListener('click', () => {
   document.body.classList.add('hide-rotate-hint');
   sessionStorage.setItem('aminaSkipRotateHint', '1');
+  playSound(SND.frogTalking);
 });
 
 // ---- Geluidseffecten ----
@@ -234,7 +235,6 @@ function makeAudio(src) {
   return a;
 }
 const SND = {
-  buttonClick: makeAudio('SFX/Button%20Click.wav'),
   aminaTalking: makeAudio('SFX/Amina%20talking.wav'),
   frogTalking: makeAudio('SFX/Frog%20talking.wav'),
   gameOver: makeAudio('SFX/Game%20over.wav'),
@@ -320,7 +320,6 @@ function renderDialogue() {
 }
 
 function advanceDialogue() {
-  playSound(SND.buttonClick);
   dIndex++;
   if (dIndex < dialogue.length) {
     renderDialogue();
@@ -578,13 +577,9 @@ function showEnd(success) {
   }
   document.getElementById('retry-btn').addEventListener('touchend', (e) => {
     e.preventDefault(); e.stopPropagation();
-    playSound(SND.buttonClick);
     startGame();
   });
-  document.getElementById('retry-btn').addEventListener('click', () => {
-    playSound(SND.buttonClick);
-    startGame();
-  });
+  document.getElementById('retry-btn').addEventListener('click', startGame);
 }
 
 drawSky();
