@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Save Sao Miguel!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html {
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body {
+    background: linear-gradient(#1a1a2e, #16213e);
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', monospace;
+    image-rendering: pixelated;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    padding: 16px;
+  }
+  #game-container {
+    position: relative;
+    width: 480px;
+    max-width: 95vw;
+    touch-action: none;
+    flex-shrink: 0;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    background: #6ec6ff;
+    border: 4px solid #2c2c54;
+    border-radius: 4px;
+    image-rendering: pixelated;
+    touch-action: none;
+  }
+  #overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(10,10,30,0.92);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 20px;
+    border-radius: 4px;
+  }
+  .speaker {
+    color: #7fffd4;
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 4px;
+    letter-spacing: 1px;
+  }
+  .line {
+    font-size: 15px;
+    line-height: 1.5;
+    margin-bottom: 18px;
+    max-width: 380px;
+  }
+  button {
+    background: #ff6b6b;
+    color: #fff;
+    border: 3px solid #c0392b;
+    padding: 12px 26px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    border-radius: 4px;
+    letter-spacing: 1px;
+    touch-action: manipulation;
+  }
+  button:hover, button:active { background: #ff8787; }
+  #hud {
+    position: absolute;
+    top: 10px; left: 10px;
+    color: #fff;
+    font-size: 13px;
+    text-shadow: 2px 2px 0 #000;
+    font-weight: bold;
+    pointer-events: none;
+  }
+  #hint {
+    text-align: center;
+    color: #aaa;
+    font-size: 12px;
+    margin-top: 10px;
+    letter-spacing: 0.5px;
+  }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="game" width="480" height="270"></canvas>
+  <div id="hud"></div>
+  <div id="overlay">
+    <div class="speaker">KIKKER</div>
+    <div class="line">"HELP!! Sinds jou laatste vertrek is er chaos op Sao Miguel. De heilige dam is gebroken en het eiland dreigt elk moment onder te lopen. Kun jij ons redden?"</div>
+    <button id="next-btn">Verder ▶</button>
+  </div>
+</div>
+<div id="hint">TIK op het scherm om te springen</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const overlay = document.getElementById('overlay');
+const hud = document.getElementById('hud');
+const gameContainer = document.getElementById('game-container');
+ctx.imageSmoothingEnabled = false;
+
+// Prevent iOS rubber-band scroll / pinch while playing (scoped to the game area)
+gameContainer.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+// ---- Dialogue sequence ----
+const dialogue = [
+  { speaker: 'KIKKER', text: '"HELP!! Sinds jou laatste vertrek is er chaos op Sao Miguel. De heilige dam is gebroken en het eiland dreigt elk moment onder te lopen. Kun jij ons redden?"' },
+  { speaker: 'AMINA', text: '"OMG, ik wist dat ik te snel was vertrokken. Ik kom er meteen aan!"' },
+  { speaker: 'KIKKER', text: '"Kwak..."' },
+  { speaker: 'KIKKER', text: '"Oke, er staat een zeilboot vlak bij jou aan de kaai. Neem hem en kwak tot ons toe. Maar let op! De weg is verspreid met Hennessy flessen. Trap er niet in! Succes!"' }
+];
+let dIndex = 0;
+
+function renderDialogue() {
+  const d = dialogue[dIndex];
+  overlay.innerHTML = `
+    <div class="speaker">${d.speaker}</div>
+    <div class="line">${d.text}</div>
+    <button id="next-btn">${dIndex < dialogue.length - 1 ? 'Verder ▶' : 'Start de reddingsactie! ⛵'}</button>
+  `;
+  document.getElementById('next-btn').addEventListener('touchend', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    advanceDialogue();
+  });
+  document.getElementById('next-btn').addEventListener('click', advanceDialogue);
+}
+
+function advanceDialogue() {
+  dIndex++;
+  if (dIndex < dialogue.length) {
+    renderDialogue();
+  } else {
+    startGame();
+  }
+}
+renderDialogue();
+
+// ---- Game state ----
+let running = false;
+let gameOver = false;
+let won = false;
+let score = 0;
+let speed = 3.2;
+const WIN_SCORE = 400;
+
+const boat = {
+  x: 70, y: 190, w: 34, h: 26,
+  vy: 0, grounded: true, jumpPower: -7.6, gravity: 0.42
+};
+const waterLevel = 216;
+
+let obstacles = [];
+let spawnTimer = 0;
+let waveOffset = 0;
+
+function resetGame() {
+  score = 0; speed = 3.2; obstacles = []; spawnTimer = 0;
+  boat.y = 190; boat.vy = 0; boat.grounded = true;
+  gameOver = false; won = false;
+}
+
+function startGame() {
+  overlay.style.display = 'none';
+  resetGame();
+  running = true;
+  requestAnimationFrame(loop);
+}
+
+function jump() {
+  if (!running) return;
+  if (gameOver || won) return;
+  if (boat.grounded) {
+    boat.vy = boat.jumpPower;
+    boat.grounded = false;
+  }
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); jump(); }
+});
+
+// Use the whole container for touch/click so it's easy to hit on iPhone
+gameContainer.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  jump();
+}, { passive: false });
+gameContainer.addEventListener('mousedown', jump);
+
+// ---- Pixel drawing helpers ----
+function pixelRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x), Math.round(y), w, h);
+}
+
+function drawBoat(x, y) {
+  pixelRect(x, y+16, 34, 8, '#8b5a2b');
+  pixelRect(x+2, y+22, 30, 4, '#6b3f1d');
+  pixelRect(x+15, y-14, 2, 30, '#4a2c17');
+  ctx.fillStyle = '#f5f0e6';
+  ctx.beginPath();
+  ctx.moveTo(x+17, y-12);
+  ctx.lineTo(x+17, y+12);
+  ctx.lineTo(x+32, y+10);
+  ctx.closePath();
+  ctx.fill();
+  pixelRect(x+6, y+2, 8, 10, '#e0a877');
+  pixelRect(x+6, y-4, 8, 8, '#3a2a1a');
+  pixelRect(x+7, y+12, 6, 4, '#d9534f');
+}
+
+function drawBottle(x, y) {
+  pixelRect(x+4, y, 4, 6, '#2e7d32');
+  pixelRect(x+2, y+6, 8, 16, '#1b5e20');
+  pixelRect(x+2, y+8, 8, 3, '#c8e6c9');
+  pixelRect(x+3, y-2, 2, 3, '#8d6e63');
+}
+
+function drawWater() {
+  ctx.fillStyle = '#3a7bd5';
+  ctx.fillRect(0, waterLevel, canvas.width, canvas.height - waterLevel);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 6; i++) {
+    ctx.beginPath();
+    const yy = waterLevel + 10 + i * 12;
+    for (let x = -20; x < canvas.width + 20; x += 20) {
+      const wy = yy + Math.sin((x + waveOffset + i*30) * 0.05) * 3;
+      if (x === -20) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+    }
+    ctx.stroke();
+  }
+}
+
+function drawSky() {
+  const grad = ctx.createLinearGradient(0,0,0,waterLevel);
+  grad.addColorStop(0, '#ffd89b');
+  grad.addColorStop(1, '#87ceeb');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,canvas.width, waterLevel);
+  pixelRect(390, 20, 24, 24, '#fff176');
+  ctx.fillStyle = 'rgba(60,80,60,0.5)';
+  ctx.beginPath();
+  ctx.moveTo(canvas.width-10, waterLevel);
+  ctx.lineTo(canvas.width-60, waterLevel-30);
+  ctx.lineTo(canvas.width-100, waterLevel-15);
+  ctx.lineTo(canvas.width-140, waterLevel-35);
+  ctx.lineTo(canvas.width-170, waterLevel);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function spawnObstacle() {
+  obstacles.push({ x: canvas.width + 10, y: waterLevel - 20, w: 12, h: 22, hit: false });
+}
+
+function loop() {
+  if (!running) return;
+  update();
+  draw();
+  if (!gameOver && !won) requestAnimationFrame(loop);
+}
+
+function update() {
+  waveOffset += speed;
+  score += speed * 0.5;
+  speed += 0.0025;
+
+  boat.vy += boat.gravity;
+  boat.y += boat.vy;
+  if (boat.y >= 190) { boat.y = 190; boat.vy = 0; boat.grounded = true; }
+
+  spawnTimer -= speed;
+  if (spawnTimer <= 0) {
+    spawnObstacle();
+    spawnTimer = 90 + Math.random() * 60 - speed*4;
+    if (spawnTimer < 45) spawnTimer = 45;
+  }
+
+  const boatBox = { x: boat.x+4, y: boat.y+2, w: 26, h: 24 };
+  for (let ob of obstacles) {
+    ob.x -= speed;
+    const obBox = { x: ob.x, y: ob.y, w: ob.w, h: ob.h };
+    if (rectsOverlap(boatBox, obBox)) {
+      gameOver = true;
+    }
+  }
+  obstacles = obstacles.filter(ob => ob.x > -20);
+
+  if (score >= WIN_SCORE) {
+    won = true;
+  }
+
+  hud.textContent = `Afstand: ${Math.floor(score)} / ${WIN_SCORE}`;
+
+  if (gameOver) showEnd(false);
+  if (won) showEnd(true);
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+}
+
+function draw() {
+  drawSky();
+  drawWater();
+  for (let ob of obstacles) drawBottle(ob.x, ob.y);
+  drawBoat(boat.x, boat.y);
+}
+
+function showEnd(success) {
+  running = false;
+  overlay.style.display = 'flex';
+  if (success) {
+    overlay.innerHTML = `
+      <div class="speaker">KIKKER</div>
+      <div class="line">"Kwak! Kwak! Je hebt het gehaald! Sao Miguel is gered — de dam houdt weer stand dankzij jou. Welkom terug, Amina!" 🎉</div>
+      <button id="retry-btn">Nog een keer spelen 🔁</button>
+    `;
+  } else {
+    overlay.innerHTML = `
+      <div class="speaker">KIKKER</div>
+      <div class="line">"Kwaak! Je bent gestruikeld over een Hennessy fles... Sao Miguel kan nog niet gered worden. Probeer opnieuw!" 🍾</div>
+      <button id="retry-btn">Probeer opnieuw 🔁</button>
+    `;
+  }
+  document.getElementById('retry-btn').addEventListener('touchend', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    startGame();
+  });
+  document.getElementById('retry-btn').addEventListener('click', startGame);
+}
+
+drawSky();
+drawWater();
+drawBoat(boat.x, boat.y);
+</script>
+
+</body>
+</html>
