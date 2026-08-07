@@ -139,12 +139,20 @@
     margin-top: 2px;
     letter-spacing: 0.5px;
   }
-  .celebrate-avatar {
-    width: 76px;
-    height: 122px;
-    image-rendering: pixelated;
-    margin-bottom: 4px;
+  .end-avatar {
+    width: min(230px, 58vw);
+    height: auto;
+    image-rendering: auto;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5);
     flex-shrink: 0;
+  }
+  .fail-heading {
+    color: #ff8787;
+    font-weight: bold;
+    font-size: 16px;
+    letter-spacing: 0.5px;
   }
   /* Zachte suggestie om het toestel te draaien -- alleen op telefoons in staande stand, wegklikbaar */
   #rotate-hint {
@@ -240,6 +248,28 @@ function playSound(a) {
   } catch (e) {}
 }
 
+// ---- Muziek: leuk intro-nummer tijdens de gesprekken/schermen, zeilgeluid
+// tijdens het varen, gejuich bij het halen van het eiland en dan weer de
+// intro-muziek erna ----
+const MUSIC = makeAudio('SFX/MUSIC.mp3');
+MUSIC.loop = true; MUSIC.volume = 0.5;
+const SAILING = makeAudio('SFX/SAILING_SFX.mp3');
+SAILING.loop = true; SAILING.volume = 0.45;
+const CHEER = makeAudio('SFX/Cheer.mp3');
+CHEER.volume = 0.85;
+
+function playMusic() {
+  SAILING.pause();
+  MUSIC.play().catch(() => {});
+}
+function stopMusic() { MUSIC.pause(); }
+function playSailing() {
+  MUSIC.pause();
+  SAILING.currentTime = 0;
+  SAILING.play().catch(() => {});
+}
+function stopSailing() { SAILING.pause(); }
+
 // iOS/Safari houdt elk <audio>-element apart op slot totdat het minstens
 // één keer is afgespeeld tijdens een echte tik van de gebruiker. Alles wordt
 // bij de allereerste tik op de pagina ontgrendeld, zodat geluiden die later
@@ -248,9 +278,11 @@ let audioUnlocked = false;
 function unlockAllAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  Object.values(SND).forEach((a) => {
+  [...Object.values(SND), MUSIC, SAILING, CHEER].forEach((a) => {
     a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
   });
+  // Meteen de juiste muziek starten voor het scherm waar we nu in staan
+  if (running) { playSailing(); } else { playMusic(); }
 }
 document.addEventListener('touchstart', unlockAllAudio, { once: true, passive: true });
 document.addEventListener('click', unlockAllAudio, { once: true });
@@ -327,8 +359,15 @@ let waveOffset = 0;
 const bottleSpawnScores = [70, 170, 330];
 let nextBottleIndex = 0;
 
+// Het eiland: verschijnt pas nadat de laatste fles voorbij is, en de missie
+// is voltooid zodra het bootje het bereikt (niet langer op basis van score alleen)
+const ISLAND_W = 96, ISLAND_H = 56;
+let island = null;
+let islandTriggerScore = null;
+
 function resetGame() {
   score = 0; speed = 2.6; obstacles = []; nextBottleIndex = 0;
+  island = null; islandTriggerScore = null;
   boat.y = 190; boat.vy = 0; boat.grounded = true;
   gameOver = false; won = false;
 }
@@ -338,6 +377,7 @@ function startGame() {
   overlay.style.display = 'none';
   resetGame();
   running = true;
+  playSailing();
   requestAnimationFrame(loop);
 }
 
@@ -436,6 +476,24 @@ function spawnObstacle() {
   obstacles.push({ x: canvas.width + 10, y: waterLevel - 20, w: 12, h: 22, hit: false });
 }
 
+function spawnIsland() {
+  island = { x: canvas.width + 20, y: waterLevel - ISLAND_H };
+}
+
+function drawIsland(x, y) {
+  const w = ISLAND_W, h = ISLAND_H;
+  // zandstrand, raakt het water
+  pixelRect(x, y + h - 16, w, 16, '#e6c988');
+  pixelRect(x + w*0.15, y + h - 26, w*0.7, 12, '#d4b06a');
+  // groene heuvel
+  pixelRect(x + w*0.22, y + h*0.28, w*0.56, h*0.5, '#3f8f3f');
+  pixelRect(x + w*0.3, y + h*0.1, w*0.4, h*0.24, '#2e7d32');
+  // palmboom
+  pixelRect(x + w - 22, y + 6, 4, 26, '#6b3f1d');
+  pixelRect(x + w - 34, y - 6, 26, 12, '#2e7d32');
+  pixelRect(x + w - 30, y - 12, 16, 8, '#388e3c');
+}
+
 function loop() {
   if (!running) return;
   update();
@@ -467,11 +525,23 @@ function update() {
   }
   obstacles = obstacles.filter(ob => ob.x > -20);
 
-  if (score >= WIN_SCORE) {
-    won = true;
+  // Het eiland verschijnt pas nadat de laatste fles ruim voorbij is
+  if (nextBottleIndex >= bottleSpawnScores.length && islandTriggerScore === null) {
+    islandTriggerScore = score + 140;
+  }
+  if (!island && islandTriggerScore !== null && score >= islandTriggerScore) {
+    spawnIsland();
+  }
+  if (island) {
+    island.x -= speed;
+    if (island.x <= boatBox.x + boatBox.w) {
+      won = true;
+    }
   }
 
-  hud.textContent = `Afstand: ${Math.floor(score)} / ${WIN_SCORE}`;
+  hud.textContent = island
+    ? 'Bijna bij het eiland! 🏝️'
+    : `Afstand: ${Math.floor(score)} / ${WIN_SCORE}`;
 
   if (gameOver) showEnd(false);
   if (won) showEnd(true);
@@ -484,6 +554,7 @@ function rectsOverlap(a, b) {
 function draw() {
   drawSky();
   drawWater();
+  if (island) drawIsland(island.x, island.y);
   for (let ob of obstacles) drawBottle(ob.x, ob.y);
   drawBoat(boat.x, boat.y);
 }
@@ -493,20 +564,25 @@ function showEnd(success) {
   overlay.classList.remove('dialogue-mode');
   overlay.style.display = 'flex';
   if (success) {
+    stopSailing();
     playSound(SND.messagePopup);
-    playSound(SND.frogTalking);
+    playSound(CHEER);
+    CHEER.addEventListener('ended', playMusic, { once: true });
     overlay.innerHTML = `
-      <img class="celebrate-avatar" src="PIXELART/amina-celebrate.png" alt="Amina viert feest">
+      <img class="end-avatar" src="PIXELART/HUGGING_CHARACTERS.png" alt="Amina en Kikker vieren feest">
       <div class="speaker">KIKKER</div>
-      <div class="line">Bedankt, je bent er geraakt. Dankzij jou konden we ontsnappen.</div>
-      <div class="line" style="font-style: italic; font-size: 12px;">"Je kunt de wind niet kiezen, maar wel hoe je je zeilen zet. Zo vaar je langs de obstakels van het leven, op weg naar de bestemming die voor je ligt."</div>
+      <div class="line">Bedankt, held. Dankzij jou konden we ontsnappen.</div>
+      <div class="line" style="font-style: italic; font-size: 12px;">"We hebben geen controle over de wind die ons tegemoetkomt, maar wel over hoe we onze zeilen zetten. Zo vinden we, ondanks elk obstakel, onze eigen koers."</div>
       <button id="retry-btn">Nog een keer spelen 🔁</button>
     `;
   } else {
+    stopSailing();
     playSound(SND.gameOver);
+    SND.gameOver.addEventListener('ended', playMusic, { once: true });
     overlay.innerHTML = `
-      <div class="speaker">KIKKER</div>
-      <div class="line">"Kwaak! Je bent gestruikeld over een Hennessy fles... Sao Miguel kan nog niet gered worden. Probeer opnieuw!" 🍾</div>
+      <img class="end-avatar" src="PIXELART/Puking.png" alt="Amina is knock-out na de Hennessy">
+      <div class="line fail-heading">SPHIJT, WE ZIJN AMINA KWIJT.</div>
+      <div class="line">Amina botste tegen de Hennessy... de rest is history.</div>
       <button id="retry-btn">Probeer opnieuw 🔁</button>
     `;
   }
