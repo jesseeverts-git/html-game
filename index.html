@@ -248,23 +248,14 @@ function playSound(a) {
   } catch (e) {}
 }
 
-// ---- Muziek: leuk intro-nummer tijdens de gesprekken/schermen, zeilgeluid
-// tijdens het varen, gejuich bij het halen van het eiland en dan weer de
-// intro-muziek erna ----
-const MUSIC = makeAudio('SFX/MUSIC.mp3');
-MUSIC.loop = true; MUSIC.volume = 0.5;
+// ---- Zeilgeluid tijdens het varen + gejuich bij het halen van het eiland
+// (geen achtergrondmuziek meer -- gaf glitches) ----
 const SAILING = makeAudio('SFX/SAILING_SFX.mp3');
 SAILING.loop = true; SAILING.volume = 0.45;
 const CHEER = makeAudio('SFX/Cheer.mp3');
 CHEER.volume = 0.85;
 
-function playMusic() {
-  SAILING.pause();
-  MUSIC.play().catch(() => {});
-}
-function stopMusic() { MUSIC.pause(); }
 function playSailing() {
-  MUSIC.pause();
   SAILING.currentTime = 0;
   SAILING.play().catch(() => {});
 }
@@ -273,16 +264,17 @@ function stopSailing() { SAILING.pause(); }
 // iOS/Safari houdt elk <audio>-element apart op slot totdat het minstens
 // één keer is afgespeeld tijdens een echte tik van de gebruiker. Alles wordt
 // bij de allereerste tik op de pagina ontgrendeld, zodat geluiden die later
-// vanuit de spellogica komen (bv. game-over) ook gegarandeerd werken.
+// vanuit de spellogica komen (bv. game-over) ook gegarandeerd werken. Gedempt
+// afspelen zodat je bij die eerste tik geen flits van geluid hoort.
 let audioUnlocked = false;
 function unlockAllAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
-  [...Object.values(SND), MUSIC, SAILING, CHEER].forEach((a) => {
-    a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {});
+  [...Object.values(SND), SAILING, CHEER].forEach((a) => {
+    const wasMuted = a.muted;
+    a.muted = true;
+    a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = wasMuted; }).catch(() => { a.muted = wasMuted; });
   });
-  // Meteen de juiste muziek starten voor het scherm waar we nu in staan
-  if (running) { playSailing(); } else { playMusic(); }
 }
 document.addEventListener('touchstart', unlockAllAudio, { once: true, passive: true });
 document.addEventListener('click', unlockAllAudio, { once: true });
@@ -567,7 +559,6 @@ function showEnd(success) {
     stopSailing();
     playSound(SND.messagePopup);
     playSound(CHEER);
-    CHEER.addEventListener('ended', playMusic, { once: true });
     overlay.innerHTML = `
       <img class="end-avatar" src="PIXELART/HUGGING_CHARACTERS.png" alt="Amina en Kikker vieren feest">
       <div class="speaker">KIKKER</div>
@@ -578,7 +569,6 @@ function showEnd(success) {
   } else {
     stopSailing();
     playSound(SND.gameOver);
-    SND.gameOver.addEventListener('ended', playMusic, { once: true });
     overlay.innerHTML = `
       <img class="end-avatar" src="PIXELART/Puking.png" alt="Amina is knock-out na de Hennessy">
       <div class="line fail-heading">SPHIJT, WE ZIJN AMINA KWIJT.</div>
